@@ -25,6 +25,9 @@ class FAHBENCH_EXPORT Simulation {
 
 public:
     Simulation();
+
+    Simulation(Simulation&&) noexcept;
+
     WorkUnit work_unit;
 
     std::string platform;
@@ -41,11 +44,17 @@ public:
 
     std::string summary() const;
 
-    SimulationResult run(const Updater & update) const;
+    SimulationResult prepare(const Updater& update);
 
+    SimulationResult run(const Updater & update);
+
+    ~Simulation();
 
 private:
     fs::path openmm_plugin_dir;
+
+    class Impl;
+    Impl * impl{ nullptr};
 
     template<class T>
     T * loadObject(const string & fname) const;

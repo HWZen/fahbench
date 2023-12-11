@@ -23,6 +23,13 @@ using namespace OpenMM;
 using std::string;
 using std::map;
 
+class Simulation::Impl {
+public:
+    Context * pContext{nullptr};
+    std::unique_ptr<System> sys{nullptr};
+    std::unique_ptr<State> state{nullptr};
+    std::unique_ptr<Integrator> intg{nullptr};
+};
 
 Simulation::Simulation()
     : work_unit(std::string("dhfr"))
@@ -38,9 +45,9 @@ Simulation::Simulation()
 #else
     , openmm_plugin_dir(fs::canonical(getExecutableDir() / fs::path("../lib/openmm")))
 #endif
-
-
-{ }
+    , impl(new Impl)
+{
+}
 
 
 map< string, string > Simulation::getPropertiesMap() const {
@@ -80,42 +87,15 @@ string Simulation::summary() const {
 }
 
 
-SimulationResult Simulation::run(const Updater & update) const {
-    update.message(boost::format("Loading plugins from plugin directory"));
-    Platform::loadPluginsFromDirectory(openmm_plugin_dir.string());
-    update.message(boost::format("Number of registered plugins: %1%") % Platform::getNumPlatforms());
-    Platform & platform = Platform::getPlatformByName(this->platform);
+SimulationResult Simulation::run(const Updater & update) {
 
-    update.message("Deserializing input files: system");
-    std::unique_ptr<System> sys(loadObject<System>(work_unit.system_fn()));
-    update.message("Deserializing input files: state");
-    std::unique_ptr<State> state(loadObject<State>(work_unit.state_fn()));
-    update.message("Deserializing input files: integrator");
-    std::unique_ptr<Integrator> intg(loadObject<Integrator>(work_unit.integrator_fn()));
-    if (update.cancelled()) return SimulationResult(ResultStatus::CANCELLED);
-
-
-    update.message("Creating context (may take several minutes)");
-    Context context(*sys, *intg, platform, getPropertiesMap());
-    context.setState(*state);
-    if (update.cancelled()) return SimulationResult(ResultStatus::CANCELLED);
-
-
-    if (verifyAccuracy) {
-        update.message("Checking accuracy against reference code");
-        std::unique_ptr<Integrator> refIntg(loadObject<Integrator>(work_unit.integrator_fn()));
-        update.message("Creating reference context (may take several minutes)");
-        Context refContext(*sys, *refIntg, Platform::getPlatformByName("Reference"));
-        refContext.setState(*state);
-        if (update.cancelled()) return SimulationResult(ResultStatus::CANCELLED);
-        update.message("Comparing forces and energy");
-        StateTests::compareForcesAndEnergies(refContext.getState(State::Forces | State::Energy),
-                                             context.getState(State::Forces | State::Energy));
-        if (update.cancelled()) return SimulationResult(ResultStatus::CANCELLED);
+    if (!impl->pContext){
+        prepare(update);
     }
 
     update.message("Starting Benchmark");
-    float score = benchmark(context, update);
+    float score = benchmark(*impl->pContext, update);
+    delete impl->pContext;
 
     // This still uses try_lock which returns "false" if it can't get the lock
     // So it is theoretically possible for it to return "Finished" even if it should have been cancelled.
@@ -123,7 +103,7 @@ SimulationResult Simulation::run(const Updater & update) const {
         return SimulationResult(ResultStatus::CANCELLED);
     } else {
         update.message("Benchmarking finished");
-        SimulationResult result(score, sys->getNumParticles());
+        SimulationResult result(score, impl->sys->getNumParticles());
         return result;
     }
 }
@@ -179,6 +159,77 @@ float Simulation::benchmark(Context & context, const Updater & update) const {
     update.progress(run_length_ms.count(), run_length_ms.count(), ns_day);
     return ns_day;
 }
+
+SimulationResult Simulation::prepare(const Updater& update)
+{
+    if (impl->pContext)
+        return {ResultStatus::FAILED};
+    update.message(boost::format("Loading plugins from plugin directory"));
+    Platform::loadPluginsFromDirectory(openmm_plugin_dir.string());
+    update.message(boost::format("Number of registered plugins: %1%") % Platform::getNumPlatforms());
+    Platform & platform = Platform::getPlatformByName(this->platform);
+
+    update.message("Deserializing input files: system");
+    impl->sys.reset(loadObject<System>(work_unit.system_fn()));
+    update.message("Deserializing input files: state");
+    impl->state.reset(loadObject<State>(work_unit.state_fn()));
+    update.message("Deserializing input files: integrator");
+    impl->intg.reset(loadObject<Integrator>(work_unit.integrator_fn()));
+    if (update.cancelled()) return {ResultStatus::CANCELLED};
+
+
+    update.message("Creating context (may take several minutes)");
+    impl->pContext = new Context(*impl->sys, *impl->intg, platform, getPropertiesMap());
+    auto &context = *impl->pContext;
+    context.setState(*impl->state);
+    if (update.cancelled()) {
+        delete impl->pContext;
+        return {ResultStatus::CANCELLED};
+    }
+
+
+    if (verifyAccuracy) {
+        update.message("Checking accuracy against reference code");
+        std::unique_ptr<Integrator> refIntg(loadObject<Integrator>(work_unit.integrator_fn()));
+        update.message("Creating reference context (may take several minutes)");
+        Context refContext(*impl->sys, *refIntg, Platform::getPlatformByName("Reference"));
+        refContext.setState(*impl->state);
+        if (update.cancelled()) {
+            delete impl->pContext;
+            return {ResultStatus::CANCELLED};
+        }
+        update.message("Comparing forces and energy");
+        StateTests::compareForcesAndEnergies(refContext.getState(State::Forces | State::Energy),
+                context.getState(State::Forces | State::Energy));
+        if (update.cancelled()){
+            delete impl->pContext;
+            return {ResultStatus::CANCELLED};
+        }
+    }
+
+    return {ResultStatus::QUEUED};
+}
+
+Simulation::~Simulation()
+{
+    delete impl;
+}
+
+Simulation::Simulation(Simulation&& other) noexcept:
+work_unit(std::move(other.work_unit)),
+platform(std::move(other.platform)),
+precision(std::move(other.precision)),
+deviceId(other.deviceId),
+platformId(other.platformId),
+verifyAccuracy(other.verifyAccuracy),
+nan_check_freq(other.nan_check_freq),
+run_length(other.run_length),
+openmm_plugin_dir(std::move(other.openmm_plugin_dir)),
+impl(other.impl)
+{
+    other.impl = nullptr;
+}
+
 
 template<class T>
 T * Simulation::loadObject(const string & fname) const {
