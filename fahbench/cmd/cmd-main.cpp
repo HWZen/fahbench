@@ -16,6 +16,7 @@
 namespace po = boost::program_options;
 using std::string;
 using std::map;
+using namespace std::chrono_literals;
 
 inline std::string getOpenMMVersion() {
     return OpenMM::Platform::getOpenMMVersion();
@@ -64,8 +65,41 @@ string listWus() {
     return ss.str();
 }
 
-int main(int argc, char ** argv) {
+int main(int argc, char ** argv) try{
     Simulation simulation;
+//
+//    simulation.work_unit = WorkUnit(std::string{ "dhfr" });
+//    simulation.run_length = 10s;
+//
+//    std::cout << simulation.summary() << std::endl;
+//
+//    class MyUpdater : public Updater{
+//    public:
+//        void progress(int step, int total_step, float score) const override
+//        {
+////            std::cout << "step: " << step << " total_step: " << total_step << " score: " << score << std::endl;
+//        }
+//
+//        void message(std::string string1) const override
+//        {
+//            std::cout << "message: " << string1 << std::endl;
+//        }
+//
+//        void message(boost::format format) const override
+//        {
+//
+//        }
+//
+//        bool cancelled() const override
+//        {
+//            return false;
+//        }
+//    };
+//
+//    simulation.run(MyUpdater{});
+//
+//    return 0;
+
     int run_length_sec;
 
     po::options_description desc("FAHBench options");
@@ -179,4 +213,7 @@ int main(int argc, char ** argv) {
         std::cout << std::endl << "Something went wrong:" << std::endl;
         std::cout << e.what() << std::endl << std::endl;
     }
+}
+catch (std::exception& e){
+    std::cerr << "catch exception: " << e.what() << std::endl;
 }

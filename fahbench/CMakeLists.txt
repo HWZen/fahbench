@@ -35,8 +35,9 @@ target_link_libraries(fahbench
 add_dependencies(fahbench openmm-opencl openmm-cpu)
 
 # Make executables
-add_subdirectory(gui)
+#add_subdirectory(gui)
 add_subdirectory(cmd)
+add_subdirectory(c_wrapper)
 
 # Install
 if(${WIN32})

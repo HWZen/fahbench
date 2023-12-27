@@ -7,7 +7,7 @@
 
 
 #if defined(_WIN32)
-const fs::path WorkUnit::_data_dir =  getExecutableDir() / fs::path("workunits");
+const fs::path WorkUnit::_data_dir =  getExecutableDir() / fs::path("resources/perform/workunits");
 #elif defined(__linux__)
 const fs::path WorkUnit::_data_dir =  getExecutableDir() / fs::path("../share/fahbench/workunits");
 #endif

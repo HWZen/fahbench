@@ -41,7 +41,7 @@ Simulation::Simulation()
     , nan_check_freq(0)
     , run_length(60)
 #ifdef _WIN32
-    , openmm_plugin_dir(fs::canonical(getExecutableDir() / fs::path("openmm")))
+    , openmm_plugin_dir(fs::canonical(getExecutableDir() / fs::path("resources/perform/openmm")))
 #else
     , openmm_plugin_dir(fs::canonical(getExecutableDir() / fs::path("../lib/openmm")))
 #endif
